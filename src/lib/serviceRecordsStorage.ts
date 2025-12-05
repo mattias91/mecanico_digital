@@ -1,4 +1,4 @@
-// Gerenciamento de registros de serviço com Supabase + fallback local
+// Gerenciamento de registros de serviço APENAS com Supabase (SEM localStorage)
 
 import { supabase } from './supabase';
 
@@ -25,12 +25,6 @@ export interface CardUpdateData {
   synced: boolean;
   service_date?: string;
 }
-
-const STORAGE_KEY = 'service_records';
-const PENDING_KEY = 'pending_service_records';
-
-// Verificar se está no cliente
-const isClient = typeof window !== 'undefined';
 
 // ✅ CORREÇÃO CRÍTICA: Obter sessão válida com refresh automático
 async function getValidSession(): Promise<{ accessToken: string; userId: string } | null> {
@@ -81,38 +75,40 @@ async function getValidSession(): Promise<{ accessToken: string; userId: string 
   }
 }
 
-// Obter todos os registros (local + Supabase)
+// ✅ CORREÇÃO: Buscar APENAS do Supabase (sem localStorage)
 export async function getServiceRecords(vehicleId?: string): Promise<ServiceRecord[]> {
-  const localRecords = getLocalRecords();
-  
-  // Tentar buscar registros remotos se tiver vehicleId
-  if (vehicleId) {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data, error } = await supabase
-          .from('service_records')
-          .select('*')
-          .eq('vehicle_id', vehicleId)
-          .eq('user_id', user.id)
-          .order('odometer_at_service', { ascending: false });
-        
-        if (!error && data) {
-          const remoteRecords = data.map(r => ({
-            ...r,
-            synced: true,
-          }));
-          
-          const unsyncedLocal = localRecords.filter(r => !r.synced);
-          return [...remoteRecords, ...unsyncedLocal];
-        }
-      }
-    } catch {
-      // Silenciosamente usar apenas registros locais
-    }
+  if (!vehicleId) {
+    console.warn('⚠️ vehicleId não fornecido - retornando array vazio');
+    return [];
   }
-  
-  return localRecords;
+
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      console.warn('⚠️ Usuário não autenticado');
+      return [];
+    }
+
+    const { data, error } = await supabase
+      .from('service_records')
+      .select('*')
+      .eq('vehicle_id', vehicleId)
+      .eq('user_id', user.id)
+      .order('odometer_at_service', { ascending: false });
+    
+    if (error) {
+      console.error('❌ Erro ao buscar registros:', error);
+      return [];
+    }
+
+    return (data || []).map(r => ({
+      ...r,
+      synced: true,
+    }));
+  } catch (error) {
+    console.error('❌ Erro ao buscar registros:', error);
+    return [];
+  }
 }
 
 // Obter ÚLTIMO registro por maintenance_item_key (DISTINCT ON logic)
@@ -132,74 +128,6 @@ export async function getLastRecordsByKey(vehicleId: string): Promise<Record<str
   });
   
   return lastRecordsByKey;
-}
-
-// Obter registros locais
-function getLocalRecords(): ServiceRecord[] {
-  if (!isClient) return [];
-  
-  try {
-    const data = localStorage.getItem(STORAGE_KEY);
-    return data ? JSON.parse(data) : [];
-  } catch (error) {
-    console.error('Erro ao ler registros locais:', error);
-    return [];
-  }
-}
-
-// Salvar registro local
-function saveLocalRecord(record: ServiceRecord): void {
-  if (!isClient) return;
-  
-  try {
-    const records = getLocalRecords();
-    records.push(record);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
-  } catch (error) {
-    console.error('Erro ao salvar registro local:', error);
-  }
-}
-
-// Salvar registro pendente localmente (fallback quando Supabase falha)
-export function savePendingLocal(payload: Omit<ServiceRecord, 'id' | 'created_at' | 'synced'>): ServiceRecord {
-  if (!isClient) {
-    throw new Error('savePendingLocal só pode ser usado no cliente');
-  }
-
-  const pendingRecord: ServiceRecord = {
-    ...payload,
-    id: `pending_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-    created_at: new Date().toISOString(),
-    synced: false,
-  };
-
-  try {
-    const pending = getPendingRecords();
-    pending.push(pendingRecord);
-    localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
-    
-    // Também salvar no storage principal
-    saveLocalRecord(pendingRecord);
-    
-    console.log('💾 Registro salvo localmente (pendente):', pendingRecord.id);
-    return pendingRecord;
-  } catch (error) {
-    console.error('Erro ao salvar registro pendente:', error);
-    throw error;
-  }
-}
-
-// Obter registros pendentes (não sincronizados)
-export function getPendingRecords(): ServiceRecord[] {
-  if (!isClient) return [];
-  
-  try {
-    const data = localStorage.getItem(PENDING_KEY);
-    return data ? JSON.parse(data) : [];
-  } catch (error) {
-    console.error('Erro ao ler registros pendentes:', error);
-    return [];
-  }
 }
 
 // Aplicar atualização de um único registro para calcular dados do card
@@ -234,7 +162,7 @@ export function applySingleRecordUpdate(
   };
 }
 
-// ✅ CORREÇÃO PRINCIPAL: Salvar registro com fallback automático e modo offline inteligente
+// ✅ CORREÇÃO PRINCIPAL: Salvar DIRETO no Supabase via API (sem localStorage)
 export async function saveServiceRecord(
   record: Omit<ServiceRecord, 'id' | 'created_at' | 'synced'>,
   vehicleId: string
@@ -246,69 +174,58 @@ export async function saveServiceRecord(
 
   console.log('📝 Salvando registro com vehicle_id:', vehicleId);
   
-  // ✅ MODO OFFLINE INTELIGENTE: Sempre salvar localmente primeiro
-  const localRecord: ServiceRecord = {
-    ...record,
-    id: `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-    created_at: new Date().toISOString(),
-    synced: false,
-  };
-  
-  saveLocalRecord(localRecord);
-  console.log('💾 Registro salvo localmente (modo offline)');
-  
-  // ✅ Tentar sincronizar com Supabase em background (não bloqueia o usuário)
-  (async () => {
-    try {
-      const session = await getValidSession();
-      
-      if (!session) {
-        console.warn('⚠️ Sessão inválida - registro permanecerá local até próxima sincronização');
-        return;
-      }
-
-      const payload = {
-        vehicle_id: vehicleId,
-        maintenance_item_key: record.maintenance_item_key,
-        odometer_at_service: record.odometer_at_service,
-        service_date: record.service_date,
-        interval_used_km: record.interval_used_km,
-        cost: record.cost || 0,
-        notes: record.notes,
-      };
-
-      console.log('📤 Tentando sincronizar com Supabase...');
-
-      const response = await fetch('/api/service-records/create', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.accessToken}`,
-        },
-        body: JSON.stringify(payload),
-      });
-
-      const result = await response.json();
-
-      if (response.ok && result.success) {
-        // Marcar como sincronizado
-        markAsSynced(localRecord.id);
-        console.log('✅ Registro sincronizado com sucesso:', result.data.id);
-      } else if (response.status === 409) {
-        // Duplicado - marcar como sincronizado também
-        markAsSynced(localRecord.id);
-        console.log('⚠️ Registro duplicado - marcado como sincronizado');
-      } else {
-        console.warn('⚠️ Falha na sincronização:', result.error);
-      }
-    } catch (error) {
-      console.warn('⚠️ Erro na sincronização em background:', error);
-      // Não fazer nada - registro já está salvo localmente
+  try {
+    const session = await getValidSession();
+    
+    if (!session) {
+      throw new Error('Sessão inválida - faça login novamente');
     }
-  })();
-  
-  // Retornar imediatamente o registro local (não espera sincronização)
-  return localRecord;
+
+    const payload = {
+      vehicle_id: vehicleId,
+      maintenance_item_key: record.maintenance_item_key,
+      odometer_at_service: record.odometer_at_service,
+      service_date: record.service_date,
+      interval_used_km: record.interval_used_km,
+      cost: record.cost || 0,
+      notes: record.notes,
+    };
+
+    console.log('📤 Salvando no Supabase via API...');
+
+    const response = await fetch('/api/service-records/create', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.accessToken}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const result = await response.json();
+
+    if (response.ok && result.success) {
+      console.log('✅ Registro salvo com sucesso:', result.data.id);
+      return {
+        ...result.data,
+        synced: true,
+      };
+    } else if (response.status === 409) {
+      console.log('⚠️ Registro duplicado - já existe no banco');
+      // Buscar o registro existente
+      const records = await getServiceRecords(vehicleId);
+      const existing = records.find(
+        r => r.maintenance_item_key === record.maintenance_item_key &&
+             r.odometer_at_service === record.odometer_at_service
+      );
+      return existing || null;
+    } else {
+      throw new Error(result.error || 'Erro ao salvar registro');
+    }
+  } catch (error: any) {
+    console.error('❌ Erro ao salvar registro:', error);
+    throw error;
+  }
 }
 
 // Obter último registro de um tipo específico
@@ -317,123 +234,21 @@ export async function getLastServiceRecord(
   vehicleId?: string
 ): Promise<ServiceRecord | null> {
   if (!vehicleId) {
-    // Fallback para registros locais se não tiver vehicleId
-    const records = getLocalRecords();
-    const filtered = records
-      .filter(r => r.maintenance_item_key === maintenanceKey)
-      .sort((a, b) => b.odometer_at_service - a.odometer_at_service);
-    
-    return filtered[0] || null;
+    console.warn('⚠️ vehicleId não fornecido');
+    return null;
   }
   
   const lastRecordsByKey = await getLastRecordsByKey(vehicleId);
   return lastRecordsByKey[maintenanceKey] || null;
 }
 
-// Obter registros não sincronizados
-export function getUnsyncedRecords(): ServiceRecord[] {
-  return getLocalRecords().filter(r => !r.synced);
-}
-
-// Marcar registro como sincronizado
-export function markAsSynced(recordId: string): void {
-  if (!isClient) return;
-  
-  try {
-    const records = getLocalRecords();
-    const updated = records.map(r => 
-      r.id === recordId ? { ...r, synced: true } : r
-    );
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-    
-    // Remover dos pendentes também
-    const pending = getPendingRecords();
-    const updatedPending = pending.filter(r => r.id !== recordId);
-    localStorage.setItem(PENDING_KEY, JSON.stringify(updatedPending));
-  } catch (error) {
-    console.error('Erro ao marcar como sincronizado:', error);
-  }
-}
-
-// Sincronizar registros locais com Supabase via API
-export async function syncLocalRecordsToSupabase(vehicleId: string): Promise<number> {
-  const unsyncedRecords = getUnsyncedRecords();
-  if (unsyncedRecords.length === 0) {
-    return 0;
-  }
-  
-  // Obter sessão válida
-  const session = await getValidSession();
-  
-  if (!session) {
-    console.warn('⚠️ Sessão inválida - sincronização adiada');
-    return 0;
-  }
-  
-  let syncedCount = 0;
-  
-  for (const record of unsyncedRecords) {
-    try {
-      const response = await fetch('/api/service-records/create', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.accessToken}`,
-        },
-        body: JSON.stringify({
-          vehicle_id: vehicleId,
-          maintenance_item_key: record.maintenance_item_key,
-          odometer_at_service: record.odometer_at_service,
-          service_date: record.service_date,
-          interval_used_km: record.interval_used_km,
-          cost: record.cost,
-          notes: record.notes,
-        }),
-      });
-
-      if (response.ok) {
-        markAsSynced(record.id);
-        syncedCount++;
-      } else if (response.status === 409) {
-        // Se for duplicado, marcar como sincronizado também (já existe no banco)
-        console.log('⚠️ Registro já existe no banco - marcando como sincronizado:', record.id);
-        markAsSynced(record.id);
-        syncedCount++;
-      } else {
-        const result = await response.json();
-        console.error('Erro ao sincronizar registro:', record.id, result.error);
-      }
-    } catch (error) {
-      console.error('Erro ao sincronizar registro:', record.id, error);
-    }
-  }
-  
-  console.log(`✅ ${syncedCount} registros sincronizados via API`);
-  return syncedCount;
-}
-
-// Exportar registros não sincronizados como JSON
-export function exportUnsyncedRecords(): void {
-  if (!isClient) return;
-  
-  const unsynced = getUnsyncedRecords();
-  
-  const dataStr = JSON.stringify(unsynced, null, 2);
-  const dataBlob = new Blob([dataStr], { type: 'application/json' });
-  
-  const url = URL.createObjectURL(dataBlob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `pending_service_records_${new Date().toISOString().split('T')[0]}.json`;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-}
+// ✅ REMOVIDO: Funções de localStorage (getLocalRecords, saveLocalRecord, etc.)
+// ✅ REMOVIDO: Funções de pending records (savePendingLocal, getPendingRecords, etc.)
+// ✅ REMOVIDO: Funções de sincronização (syncLocalRecordsToSupabase, markAsSynced, etc.)
 
 // Gerar documentação de backend
 export function generateBackendDocs(): void {
-  if (!isClient) return;
+  if (typeof window === 'undefined') return;
   
   const docs = `# Documentação de Backend - Registros de Serviço
 
@@ -513,7 +328,7 @@ CREATE INDEX idx_service_records_user ON service_records(user_id);
 - Endpoint implementado em: src/app/api/service-records/create/route.ts
 - Usa Bearer token para autenticação
 - Deduplicação automática antes de inserir
-- Fallback local se API falhar
+- Todos os dados salvos diretamente no Supabase
 `;
 
   const blob = new Blob([docs], { type: 'text/markdown' });

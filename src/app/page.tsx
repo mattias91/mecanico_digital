@@ -24,9 +24,8 @@ import {
   salvarIntervalos,
 } from '@/lib/database';
 import { calcularAlertas } from '@/lib/maintenanceCalculations';
-import { AlertCircle, Database } from 'lucide-react';
 
-type Tela = 'login' | 'cadastro-veiculo' | 'app' | 'config-necessaria';
+type Tela = 'login' | 'cadastro-veiculo' | 'app';
 
 interface Usuario {
   id: string;
@@ -53,9 +52,9 @@ export default function Home() {
   const verificarSessaoAtual = async () => {
     setCarregando(true);
     
-    // Se Supabase não está configurado, mostrar tela de configuração
-    if (!isSupabaseConfigured()) {
-      setTelaAtual('config-necessaria');
+    // Se Supabase não está configurado, ir direto para login
+    if (!isSupabaseConfigured) {
+      setTelaAtual('login');
       setCarregando(false);
       return;
     }
@@ -65,6 +64,7 @@ export default function Home() {
       
       if (resultado.success && resultado.usuario) {
         setUsuario(resultado.usuario);
+        // ✅ CORREÇÃO: Recarregar TODOS os dados do Supabase ao fazer login
         await carregarDadosUsuario(resultado.usuario.id);
       } else {
         // Forçar tela de login se não houver sessão
@@ -78,32 +78,39 @@ export default function Home() {
     }
   };
 
+  // ✅ CORREÇÃO: Função para recarregar dados do Supabase (sincronização entre dispositivos)
   const carregarDadosUsuario = async (idUsuario: string) => {
     try {
+      console.log('🔄 Carregando dados do Supabase para usuário:', idUsuario);
+
       // Carregar veículo
       const resultadoVeiculo = await buscarVeiculoDoUsuario(idUsuario);
       
       if (resultadoVeiculo.success && resultadoVeiculo.veiculo) {
         setVeiculo(resultadoVeiculo.veiculo);
+        console.log('✅ Veículo carregado:', resultadoVeiculo.veiculo.id);
         
         // Carregar manutenções
         const resultadoManutencoes = await buscarManutencoes(resultadoVeiculo.veiculo.id);
         if (resultadoManutencoes.success) {
           setManutencoes(resultadoManutencoes.manutencoes);
+          console.log('✅ Manutenções carregadas:', resultadoManutencoes.manutencoes.length);
         }
         
         // Carregar intervalos
         const resultadoIntervalos = await buscarIntervalos(idUsuario);
         if (resultadoIntervalos.success) {
           setIntervalos(resultadoIntervalos.intervalos);
+          console.log('✅ Intervalos carregados');
         }
         
         setTelaAtual('app');
       } else {
+        console.log('ℹ️ Nenhum veículo cadastrado - redirecionando para cadastro');
         setTelaAtual('cadastro-veiculo');
       }
     } catch (error) {
-      console.error('Erro ao carregar dados:', error);
+      console.error('❌ Erro ao carregar dados:', error);
       setTelaAtual('cadastro-veiculo');
     } finally {
       setCarregando(false);
@@ -122,10 +129,12 @@ export default function Home() {
     }
   }, [veiculo, intervalos, refreshTrigger]);
 
-  // Handler: Login
+  // ✅ CORREÇÃO: Handler de Login - recarregar dados do Supabase
   const handleLogin = async (id: string, email: string, nome: string) => {
+    console.log('🔐 Login realizado - carregando dados do Supabase...');
     setUsuario({ id, email, nome });
     setCarregando(true);
+    // Recarregar TODOS os dados do Supabase ao fazer login
     await carregarDadosUsuario(id);
   };
 
@@ -148,6 +157,7 @@ export default function Home() {
       if (resultado.success && resultado.veiculo) {
         // Sucesso: salvar veículo e ir para o app
         setVeiculo(resultado.veiculo);
+        console.log('✅ Veículo cadastrado no Supabase:', resultado.veiculo.id);
         setTelaAtual('app');
       } else {
         // Erro ao salvar
@@ -161,20 +171,22 @@ export default function Home() {
     }
   };
 
-  // Handler: Atualizar KM
+  // ✅ CORREÇÃO: Handler de Atualizar KM - salvar no Supabase
   const handleAtualizarKm = async (novoKm: number) => {
     if (!veiculo) return;
 
+    console.log('📝 Atualizando KM no Supabase:', novoKm);
     const resultado = await atualizarVeiculo(veiculo.id, { km_atual: novoKm });
     
     if (resultado.success && resultado.veiculo) {
       setVeiculo(resultado.veiculo);
+      console.log('✅ KM atualizado no Supabase');
       // Forçar recálculo de alertas
       setRefreshTrigger(prev => prev + 1);
     }
   };
 
-  // Handler: Registrar Manutenção
+  // ✅ CORREÇÃO: Handler de Registrar Manutenção - salvar no Supabase
   const handleRegistrarManutencao = async (manutencaoData: {
     tipo: TipoManutencao;
     data: string;
@@ -191,10 +203,12 @@ export default function Home() {
       ...manutencaoData,
     };
     
+    console.log('📝 Salvando manutenção no Supabase...');
     const resultado = await salvarManutencao(novaManutencao);
     
     if (resultado.success && resultado.manutencao) {
       setManutencoes([...manutencoes, resultado.manutencao]);
+      console.log('✅ Manutenção salva no Supabase:', resultado.manutencao.id);
       // Forçar recálculo de alertas
       setRefreshTrigger(prev => prev + 1);
     }
@@ -202,10 +216,11 @@ export default function Home() {
 
   // Handler: Forçar refresh dos dados (chamado após salvar service_record)
   const handleRefreshData = () => {
+    console.log('🔄 Forçando refresh dos dados...');
     setRefreshTrigger(prev => prev + 1);
   };
 
-  // Handler: Salvar Configurações
+  // ✅ CORREÇÃO: Handler de Salvar Configurações - salvar no Supabase
   const handleSalvarConfiguracoes = async (
     veiculoAtualizado: Omit<Veiculo, 'id' | 'id_usuario'>,
     intervalosAtualizados: IntervaloManutencao,
@@ -213,16 +228,20 @@ export default function Home() {
   ) => {
     if (!veiculo || !usuario) return;
 
+    console.log('📝 Salvando configurações no Supabase...');
+
     // Atualizar veículo
     const resultadoVeiculo = await atualizarVeiculo(veiculo.id, veiculoAtualizado);
     if (resultadoVeiculo.success && resultadoVeiculo.veiculo) {
       setVeiculo(resultadoVeiculo.veiculo);
+      console.log('✅ Veículo atualizado no Supabase');
     }
 
     // Atualizar intervalos
     const resultadoIntervalos = await salvarIntervalos(usuario.id, intervalosAtualizados);
     if (resultadoIntervalos.success) {
       setIntervalos(intervalosAtualizados);
+      console.log('✅ Intervalos atualizados no Supabase');
     }
 
     setNotificacoesAtivas(notificacoes);
@@ -236,78 +255,7 @@ export default function Home() {
       <div className="min-h-screen bg-gradient-to-br from-[#0A0A0A] via-[#1A1A1A] to-[#0F0F0F] flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-gray-400">Carregando...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Tela de configuração necessária
-  if (telaAtual === 'config-necessaria') {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-[#0A0A0A] via-[#1A1A1A] to-[#0F0F0F] flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl shadow-2xl p-8 border border-gray-700">
-          <div className="text-center mb-6">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-orange-500/20 rounded-full mb-4">
-              <Database className="w-8 h-8 text-orange-500" />
-            </div>
-            <h1 className="text-2xl font-bold text-white mb-2">
-              Configuração Necessária
-            </h1>
-            <p className="text-gray-400 text-sm">
-              Este aplicativo precisa de configuração do banco de dados para funcionar
-            </p>
-          </div>
-
-          <div className="bg-orange-500/10 border border-orange-500/30 rounded-lg p-4 mb-6">
-            <div className="flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-orange-500 flex-shrink-0 mt-0.5" />
-              <div className="text-sm text-gray-300">
-                <p className="font-semibold text-orange-400 mb-2">
-                  Banco de dados não configurado
-                </p>
-                <p className="text-gray-400">
-                  Para usar este aplicativo, você precisa configurar as credenciais do Supabase.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700">
-              <h3 className="text-white font-semibold mb-2 text-sm">
-                Como configurar:
-              </h3>
-              <ol className="text-gray-400 text-sm space-y-2 list-decimal list-inside">
-                <li>Acesse as Configurações do Projeto</li>
-                <li>Vá em Integrações → Supabase</li>
-                <li>Conecte sua conta do Supabase</li>
-                <li>Recarregue esta página</li>
-              </ol>
-            </div>
-
-            <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4">
-              <p className="text-blue-400 text-xs">
-                💡 <strong>Dica:</strong> Se você ainda não tem uma conta Supabase, 
-                crie uma gratuitamente em{' '}
-                <a 
-                  href="https://supabase.com" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="underline hover:text-blue-300"
-                >
-                  supabase.com
-                </a>
-              </p>
-            </div>
-
-            <button
-              onClick={() => window.location.reload()}
-              className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-200 shadow-lg hover:shadow-xl"
-            >
-              Recarregar Página
-            </button>
-          </div>
+          <p className="text-gray-400">Carregando dados do Supabase...</p>
         </div>
       </div>
     );

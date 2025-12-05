@@ -30,23 +30,79 @@ export const supabase = isSupabaseConfigured()
 export type Database = {
   public: {
     Tables: {
-      usuarios: {
+      usuarios_temp: {
         Row: {
           id: string;
           email: string;
           nome: string;
+          telefone?: string;
+          plan_id?: string;
+          subscription_status?: string;
+          provider?: string;
+          provider_customer_id?: string;
+          plan_valid_until?: string;
           created_at: string;
         };
         Insert: {
           id?: string;
           email: string;
           nome: string;
+          telefone?: string;
+          plan_id?: string;
+          subscription_status?: string;
+          provider?: string;
+          provider_customer_id?: string;
+          plan_valid_until?: string;
           created_at?: string;
         };
         Update: {
           id?: string;
           email?: string;
           nome?: string;
+          telefone?: string;
+          plan_id?: string;
+          subscription_status?: string;
+          provider?: string;
+          provider_customer_id?: string;
+          plan_valid_until?: string;
+          created_at?: string;
+        };
+      };
+      plans: {
+        Row: {
+          id: string;
+          name: string;
+          code: 'BASIC' | 'PLUS' | 'PRO';
+          description?: string;
+          features: {
+            ocr: boolean;
+            whatsapp: boolean;
+          };
+          price_monthly: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          code: 'BASIC' | 'PLUS' | 'PRO';
+          description?: string;
+          features: {
+            ocr: boolean;
+            whatsapp: boolean;
+          };
+          price_monthly: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          code?: 'BASIC' | 'PLUS' | 'PRO';
+          description?: string;
+          features?: {
+            ocr: boolean;
+            whatsapp: boolean;
+          };
+          price_monthly?: number;
           created_at?: string;
         };
       };

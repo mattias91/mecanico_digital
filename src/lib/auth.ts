@@ -44,7 +44,7 @@ export async function cadastrarUsuario(email: string, senha: string, nome: strin
     }
     if (!authData.user) throw new Error('Erro ao criar usuário');
 
-    // 2. Criar registro na tabela usuarios_temp (com coluna telefone)
+    // 2. Criar registro na tabela usuarios_temp (tabela oficial)
     const { error: dbError } = await supabase
       .from('usuarios_temp')
       .insert({
@@ -109,40 +109,15 @@ export async function fazerLogin(email: string, senha: string) {
     }
     if (!authData.user) throw new Error('Erro ao fazer login');
 
-    // 2. Buscar dados do usuário na tabela usuarios_temp primeiro
-    let userData = null;
-
-    // Tentar buscar em usuarios_temp (nova tabela com telefone)
-    const tempResult = await supabase
+    // 2. Buscar dados do usuário na tabela usuarios_temp (tabela oficial)
+    const { data: userData, error: dbError } = await supabase
       .from('usuarios_temp')
       .select('*')
       .eq('id', authData.user.id)
       .single();
 
-    if (tempResult.data) {
-      userData = tempResult.data;
-    } else {
-      // Fallback: buscar na tabela usuarios antiga
-      const oldResult = await supabase
-        .from('usuarios')
-        .select('*')
-        .eq('id', authData.user.id)
-        .single();
-
-      if (oldResult.error) throw oldResult.error;
-      userData = oldResult.data;
-
-      // Migrar usuário para nova tabela
-      await supabase
-        .from('usuarios_temp')
-        .insert({
-          id: userData.id,
-          email: userData.email,
-          nome: userData.nome,
-          telefone: null,
-          created_at: userData.created_at,
-        });
-    }
+    if (dbError) throw dbError;
+    if (!userData) throw new Error('Usuário não encontrado no banco de dados');
 
     return {
       success: true,
@@ -191,39 +166,15 @@ export async function verificarSessao() {
     if (error) throw error;
     if (!session) return { success: false, usuario: null };
 
-    // Buscar dados do usuário em usuarios_temp primeiro
-    let userData = null;
-
-    const tempResult = await supabase
+    // Buscar dados do usuário na tabela usuarios_temp (tabela oficial)
+    const { data: userData, error: dbError } = await supabase
       .from('usuarios_temp')
       .select('*')
       .eq('id', session.user.id)
       .single();
 
-    if (tempResult.data) {
-      userData = tempResult.data;
-    } else {
-      // Fallback: buscar na tabela usuarios antiga
-      const oldResult = await supabase
-        .from('usuarios')
-        .select('*')
-        .eq('id', session.user.id)
-        .single();
-
-      if (oldResult.error) throw oldResult.error;
-      userData = oldResult.data;
-
-      // Migrar usuário para nova tabela
-      await supabase
-        .from('usuarios_temp')
-        .insert({
-          id: userData.id,
-          email: userData.email,
-          nome: userData.nome,
-          telefone: null,
-          created_at: userData.created_at,
-        });
-    }
+    if (dbError) throw dbError;
+    if (!userData) throw new Error('Usuário não encontrado no banco de dados');
 
     return {
       success: true,

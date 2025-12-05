@@ -6,10 +6,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Save, Bell, Settings2, Download, FileText } from 'lucide-react';
+import { Save, Bell, Settings2 } from 'lucide-react';
 import { Veiculo, IntervaloManutencao } from '@/lib/types';
 import { toast } from 'sonner';
-import { exportUnsyncedRecords, generateBackendDocs, getUnsyncedRecords } from '@/lib/serviceRecordsStorage';
 
 interface PaginaConfiguracoesProps {
   veiculo: Veiculo;
@@ -81,31 +80,6 @@ export default function PaginaConfiguracoes({
     }
   };
 
-  const handleExportarRegistros = () => {
-    const unsynced = getUnsyncedRecords();
-    
-    if (unsynced.length === 0) {
-      toast.info('Nenhum registro pendente', {
-        description: 'Não há registros não sincronizados para exportar.',
-      });
-      return;
-    }
-
-    exportUnsyncedRecords();
-    toast.success('Registros exportados!', {
-      description: `${unsynced.length} registro(s) exportado(s) com sucesso.`,
-      duration: 3000,
-    });
-  };
-
-  const handleGerarDocumentacao = () => {
-    generateBackendDocs();
-    toast.success('Documentação gerada!', {
-      description: 'Guia de integração de backend baixado com sucesso.',
-      duration: 3000,
-    });
-  };
-
   return (
     <div className="space-y-4 sm:space-y-6">
       {/* Intervalos de Manutenção */}
@@ -170,54 +144,18 @@ export default function PaginaConfiguracoes({
         </div>
       </Card>
 
-      {/* Gerenciamento de Registros Locais */}
-      <Card className="p-4 sm:p-6 bg-white border-slate-200">
-        <div className="flex items-center gap-2 mb-4">
-          <Download className="w-5 h-5 text-blue-600" />
-          <h3 className="text-base sm:text-lg font-semibold text-slate-900">
-            Gerenciamento de Registros
-          </h3>
-        </div>
-
-        <p className="text-sm text-slate-600 mb-4">
-          Os registros de manutenção são salvos localmente no seu navegador. 
-          Use as opções abaixo para exportar ou gerar documentação para integração com backend.
-        </p>
-
-        <div className="flex flex-col sm:flex-row gap-3">
-          <Button
-            onClick={handleExportarRegistros}
-            variant="outline"
-            className="flex-1"
-          >
-            <Download className="w-4 h-4 mr-2" />
-            Exportar Registros Não Sincronizados
-          </Button>
-
-          <Button
-            onClick={handleGerarDocumentacao}
-            variant="outline"
-            className="flex-1"
-          >
-            <FileText className="w-4 h-4 mr-2" />
-            Gerar Requisição de Backend
-          </Button>
-        </div>
-
-        <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-          <p className="text-xs text-blue-800">
-            <strong>Nota:</strong> Os registros são salvos apenas no seu navegador. 
-            Para persistência permanente, um desenvolvedor precisa implementar o backend 
-            usando a documentação gerada.
-          </p>
-        </div>
-      </Card>
-
       {/* Informações Adicionais */}
       <Card className="p-4 bg-blue-50 border-blue-200">
         <p className="text-xs sm:text-sm text-blue-800">
           <strong>Dica:</strong> Ajuste os intervalos de acordo com as recomendações do fabricante do seu veículo. 
           Intervalos menores garantem maior segurança e durabilidade.
+        </p>
+      </Card>
+
+      <Card className="p-4 bg-green-50 border-green-200">
+        <p className="text-xs sm:text-sm text-green-800">
+          <strong>✓ Sincronização Automática:</strong> Todos os dados são salvos automaticamente no Supabase 
+          e sincronizados entre todos os seus dispositivos.
         </p>
       </Card>
     </div>

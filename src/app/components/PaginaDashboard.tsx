@@ -89,10 +89,12 @@ export default function PaginaDashboard({ veiculo, alertas, manutencoes, onAtual
     setNovoKm(veiculo.km_atual.toString());
   }, [veiculo.km_atual]);
 
-  // Carregar custos dos service_records ao montar e quando houver mudanças
+  // ✅ CORREÇÃO: Carregar custos dos service_records ao montar e quando houver mudanças
+  // Recarrega SEMPRE do Supabase para garantir sincronização entre dispositivos
   useEffect(() => {
     const carregarCustos = async () => {
       try {
+        console.log('🔄 Carregando custos do Supabase...');
         const records = await getServiceRecords(veiculo.id);
         
         // Agregar custos por tipo de manutenção
@@ -106,8 +108,9 @@ export default function PaginaDashboard({ veiculo, alertas, manutencoes, onAtual
         });
         
         setCustosPorTipo(custos);
+        console.log('✅ Custos carregados do Supabase:', Object.keys(custos).length, 'tipos');
       } catch (error) {
-        console.error('Erro ao carregar custos:', error);
+        console.error('❌ Erro ao carregar custos:', error);
       }
     };
     
